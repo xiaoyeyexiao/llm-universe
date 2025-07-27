@@ -70,18 +70,14 @@ class SparkModel:
         self.appid = appid or os.environ.get("IFLYTEK_SPARK_APP_ID")
         self.api_key = api_key or os.environ.get("IFLYTEK_SPARK_API_KEY")
         self.api_secret = api_secret or os.environ.get("IFLYTEK_SPARK_API_SECRET")
-        self.Spark_url = Spark_url or os.environ.get("IFLYTEK_SPARK_X1_URL")
-        self.domain = domain or os.environ.get("IFLYTEK_SPARK_DOMAIN")
+        self.Spark_url = Spark_url or os.environ.get("IFLYTEK_SPARK_4Ultra_URL")
+        self.domain = domain or os.environ.get("IFLYTEK_SPARK_4Ultra_DOMAIN")
         self.text = []
         self.answer = ""
         self.isFirstcontent = False
         self._ws = None
         self._response_collected = []
         self._finished = False
-        print("appid: {}".format(self.appid))
-        print("api_key: {}".format(self.api_key))
-        print("api_secret: {}".format(self.api_secret))
-        print("-----------")
 
     def on_error(self, ws, error):
         print("### error:", error)

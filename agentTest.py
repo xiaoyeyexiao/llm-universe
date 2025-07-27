@@ -4,9 +4,9 @@ from sparkai.embedding.spark_embedding import Embeddingmodel
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.document_loaders.markdown import UnstructuredMarkdownLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-# from langchain_community.vectorstores import Chroma
+from langchain_community.llms.sparkllm import SparkLLM
 from langchain_chroma import Chroma
-from spark_x1 import SparkModel
+from sparkModel import SparkModel
 from sparkai_embedding import SparkAIEmbeddings
 from dotenv import load_dotenv, find_dotenv
 import re
@@ -19,6 +19,13 @@ class AgentTest:
         # load_dotenv()读取该.env文件，并将其中的环境变量加载到当前的运行环境中  
         # 如果你设置的是全局的环境变量，这行代码则没有任何作用。
         _ = load_dotenv(find_dotenv())
+        self.spark_appid=os.environ.get("IFLYTEK_SPARK_APP_ID")
+        self.spark_api_key=os.environ.get("IFLYTEK_SPARK_API_KEY")
+        self.spark_api_secret=os.environ.get("IFLYTEK_SPARK_API_SECRET")
+        self.spark_x1_url=os.environ.get("IFLYTEK_SPARK_X1_URL")
+        self.spark_x1_domain=os.environ.get("IFLYTEK_SPARK_X1_DOMAIN")
+        self.spark_4ultra_url=os.environ.get("IFLYTEK_SPARK_4Ultra_URL")
+        self.spark_4ultra_domain=os.environ.get("IFLYTEK_SPARK_4Ultra_DOMAIN")
         # 星火大模型
         self.sparkModel = SparkModel()
         # 星火文本向量化
@@ -170,7 +177,18 @@ class AgentTest:
         for i, sim_doc in enumerate(mmr_docs):
             print(f"MMR 检索到的第{i}个内容: \n{sim_doc.page_content[:200]}", end="\n--------------\n")
 
-
+    def llm_to_langchain(self):
+        llm = SparkLLM(
+            spark_app_id=self.spark_appid,
+            spark_api_key=self.spark_api_key,
+            spark_api_secret=self.spark_api_secret,
+            spark_llm_domain=self.spark_4ultra_domain,
+            spark_api_url=self.spark_4ultra_url,
+            temperature=0.1
+        )
+        
+        res = llm.invoke("你好，请你自我介绍一下！")
+        print(res)
 
 if __name__ == "__main__":
 
@@ -179,4 +197,5 @@ if __name__ == "__main__":
     # agentTest.test_embedding()
     # agentTest.data_process()
     # agentTest.create_database()
-    agentTest.query_database()
+    # agentTest.query_database()
+    agentTest.llm_to_langchain()

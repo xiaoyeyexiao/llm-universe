@@ -24,9 +24,6 @@ class SparkAIEmbeddings(Embeddings):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.last_request_time = 0  # 记录上次请求时间
-        print("appid: ", self.spark_embedding_app_id)
-        print("api_key: ", self.spark_embedding_api_key)
-        print("api_secret: ", self.spark_embedding_api_secret)
         if not self.spark_embedding_app_id or not self.spark_embedding_api_key or not self.spark_embedding_api_secret:
             raise ValueError("必须提供讯飞星火API的凭据，请检查环境变量配置")
         
