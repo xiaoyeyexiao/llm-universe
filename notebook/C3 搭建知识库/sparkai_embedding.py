@@ -77,6 +77,14 @@ class MySparkAIEmbeddings(Embeddings):
     
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """将文档列表转换为嵌入向量列表"""
+        """
+        生成输入文本列表的 embedding.
+        Args:
+            texts (List[str]): 要生成 embedding 的文本列表.
+
+        Returns:
+            List[List[float]]: 输入列表中每个文档的 embedding 列表。每个 embedding 都表示为一个浮点值列表。
+        """
         results = []
         failed_count = 0
         

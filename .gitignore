@@ -162,3 +162,5 @@ cython_debug/
 */*/.DS_Store
 .idea/
 .DS_Store
+
+临时文件/
