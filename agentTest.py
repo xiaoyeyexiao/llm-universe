@@ -6,6 +6,8 @@ from langchain_community.document_loaders.markdown import UnstructuredMarkdownLo
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.llms.sparkllm import SparkLLM
 from langchain_chroma import Chroma
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from sparkModel import SparkModel
 from sparkai_embedding import SparkAIEmbeddings
 from dotenv import load_dotenv, find_dotenv
@@ -96,9 +98,9 @@ class AgentTest:
         ''' 
         * 文档分割
         * RecursiveCharacterTextSplitter 递归字符文本分割
-        RecursiveCharacterTextSplitter 将按不同的字符递归地分割(按照这个优先级["\n\n", "\n", " ", ""])，
-            这样就能尽量把所有和语义相关的内容尽可能长时间地保留在同一位置
-        RecursiveCharacterTextSplitter需要关注的是4个参数：
+          RecursiveCharacterTextSplitter 将按不同的字符递归地分割(按照这个优先级["\n\n", "\n", " ", ""])，
+          这样就能尽量把所有和语义相关的内容尽可能长时间地保留在同一位置
+          RecursiveCharacterTextSplitter需要关注的是4个参数：
 
         * separators - 分隔符字符串数组
         * chunk_size - 每个文档的字符数量限制
@@ -161,7 +163,10 @@ class AgentTest:
         print(f"向量库中存储的数量：{vector_db._collection.count()}")
 
     def query_database(self):
-        vector_db = Chroma(persist_directory=self.persist_directory, embedding_function=self.sparkEmbedding)
+        vector_db = Chroma(
+            persist_directory=self.persist_directory, 
+            embedding_function=self.sparkEmbedding
+        )
         question="文章"
         
         # 按余弦相似度排序进行搜索
@@ -177,7 +182,19 @@ class AgentTest:
         for i, sim_doc in enumerate(mmr_docs):
             print(f"MMR 检索到的第{i}个内容: \n{sim_doc.page_content[:200]}", end="\n--------------\n")
 
-    def llm_to_langchain(self):
+    def langchain_chain(self):
+        # system提示词模板和用户输入提示词模板
+        system_template = "你是一个翻译助手，可以帮助我将 {input_language} 翻译成 {output_language}。\
+                           请最终给出一条最符合的翻译结果，不要任何解释或其他内容。"
+        human_template = "{text}"
+        # 提示词模板，一个 ChatPromptTemplate 是一个 ChatMessageTemplate 的列表。
+        # 每个 ChatMessageTemplate 包含格式化该聊天消息的说明（其角色以及内容）。
+        chat_prompt = ChatPromptTemplate([
+            ("system", system_template),
+            ("human", human_template),
+        ])
+        
+        # 基于langchain调用大模型
         llm = SparkLLM(
             spark_app_id=self.spark_appid,
             spark_api_key=self.spark_api_key,
@@ -186,9 +203,27 @@ class AgentTest:
             spark_api_url=self.spark_4ultra_url,
             temperature=0.1
         )
+
+        # 输出解析器，将模型的输出解析为需要的格式，例如字符串、JSON 等
+        output_parser = StrOutputParser()
         
-        res = llm.invoke("你好，请你自我介绍一下！")
-        print(res)
+        # LCEL 将不同的组件拼凑成一个链，前一个组件的输出作为下一个组件的输入
+        # 用法示例：chain = prompt | model | output_parser
+        # 该链将获取输入变量 text，将这些变量传递给提示模板 chat_prompt 以创建提示，
+        # 再将提示传递给语言模型 llm，然后通过（可选）输出解析器 output_parser 传递输出
+        chain = chat_prompt | llm | output_parser
+        
+        # 用户输入的内容
+        input_language = "中文"
+        output_language = "英文"
+        text = "我带着比身体重的行李，\
+                游入尼罗河底，\
+                经过几道闪电 看到一堆光圈，\
+                不确定是不是这里。" 
+        
+        # 将用户输入的内容传递给chain，调用大模型并返回结果
+        output  = chain.invoke({"input_language": input_language, "output_language": output_language, "text": text})
+        print(output)
 
 if __name__ == "__main__":
 
@@ -198,4 +233,4 @@ if __name__ == "__main__":
     # agentTest.data_process()
     # agentTest.create_database()
     # agentTest.query_database()
-    agentTest.llm_to_langchain()
+    agentTest.langchain_chain()
