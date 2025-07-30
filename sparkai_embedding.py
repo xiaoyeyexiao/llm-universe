@@ -27,7 +27,7 @@ class SparkAIEmbeddings(Embeddings):
         if not self.spark_embedding_app_id or not self.spark_embedding_api_key or not self.spark_embedding_api_secret:
             raise ValueError("必须提供讯飞星火API的凭据，请检查环境变量配置")
         
-        print(f"初始化讯飞星火Embedding，domain为: {self.spark_embedding_domain}")
+        # print(f"初始化讯飞星火Embedding，domain为: {self.spark_embedding_domain}")
         
         try:
             self.client = Embeddingmodel(

@@ -8,6 +8,7 @@ from langchain_community.llms.sparkllm import SparkLLM
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnableLambda
 from sparkModel import SparkModel
 from sparkai_embedding import SparkAIEmbeddings
 from dotenv import load_dotenv, find_dotenv
@@ -32,7 +33,7 @@ class AgentTest:
         self.sparkModel = SparkModel()
         # 星火文本向量化
         self.sparkEmbedding = SparkAIEmbeddings()
-        self.persist_directory = 'data_base/vector_db/chroma'
+        self.database_directory = 'data_base/vector_db/chroma'
 
     # 调用模型，简单的对话
     def chat(self):
@@ -157,14 +158,14 @@ class AgentTest:
         vector_db = Chroma.from_documents(
             documents=split_docs,
             embedding=self.sparkEmbedding,
-            persist_directory=self.persist_directory  # 允许我们将persist_directory目录保存到磁盘上
+            persist_directory=self.database_directory  # 允许我们将persist_directory目录保存到磁盘上
         )
         
         print(f"向量库中存储的数量：{vector_db._collection.count()}")
 
     def query_database(self):
         vector_db = Chroma(
-            persist_directory=self.persist_directory, 
+            persist_directory=self.database_directory, 
             embedding_function=self.sparkEmbedding
         )
         question="文章"
@@ -225,6 +226,35 @@ class AgentTest:
         output  = chain.invoke({"input_language": input_language, "output_language": output_language, "text": text})
         print(output)
 
+    def paper_reading(self):
+        # 加载向量数据库
+        vector_db = Chroma(
+            persist_directory = self.database_directory,
+            embedding_function = self.sparkEmbedding
+        )
+        # print(f"向量库中存储的数量：{vector_db._collection.count()}")
+        
+        # 通过as_retriever方法把向量数据库构造成检索器。
+        # 如下代码会在向量数据库中根据相似性进行检索，返回前 k 个最相似的文档
+        retriever = vector_db.as_retriever(search_kwargs={"k": 3})
+        question = "什么是SSL？"
+        # docs = retriever.invoke(question)
+        # for i, doc in enumerate(docs):
+        #     print(f"检索到的第{i}个内容: \n {doc.page_content}", 
+        #           end="\n-----------------------------------------------------\n")
+
+        # 处理检索到的文档
+        def combine_docs(docs):
+            return "\n\n".join(doc.page_content for doc in docs)
+        # LCEL中要求所有的组成元素都是Runnable类型，前面我们见过的ChatModel、PromptTemplate等都是继承自Runnable类。
+        combiner = RunnableLambda(combine_docs)
+        # 检索链retrieval_chain是由检索器retriever及组合器combiner组成的，由|符号串连，数据从左向右传递，
+        # 即问题先被retriever检索得到检索结果，再将检索结果给combiner()进一步处理并输出。
+        retrieval_chain = retriever | combiner
+        
+        output = retrieval_chain.invoke(question)
+        print(output)
+
 if __name__ == "__main__":
 
     agentTest = AgentTest()
@@ -233,4 +263,5 @@ if __name__ == "__main__":
     # agentTest.data_process()
     # agentTest.create_database()
     # agentTest.query_database()
-    agentTest.langchain_chain()
+    # agentTest.langchain_chain()
+    agentTest.paper_reading()
