@@ -6,14 +6,19 @@ from langchain_community.document_loaders.markdown import UnstructuredMarkdownLo
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.llms.sparkllm import SparkLLM
 from langchain_chroma import Chroma
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnableLambda
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough, RunnableParallel
 from sparkModel import SparkModel
 from sparkai_embedding import SparkAIEmbeddings
 from dotenv import load_dotenv, find_dotenv
 import re
 
+"""
+1、invoke()的参数一般是字典
+2、一个 ChatMessageTemplate 一般是一个列表，列表中的每一个元素都是一个二元组
+3、LCEL中要求所有的组成元素都是Runnable类型，前面我们见过的ChatModel、PromptTemplate等都是继承自Runnable类
+"""
 
 class AgentTest:
     def __init__(self):
@@ -34,6 +39,15 @@ class AgentTest:
         # 星火文本向量化
         self.sparkEmbedding = SparkAIEmbeddings()
         self.database_directory = 'data_base/vector_db/chroma'
+        # 基于langchain调用大模型
+        self.llm = SparkLLM(
+            spark_app_id=self.spark_appid,
+            spark_api_key=self.spark_api_key,
+            spark_api_secret=self.spark_api_secret,
+            spark_llm_domain=self.spark_4ultra_domain,
+            spark_api_url=self.spark_4ultra_url,
+            temperature=0.1
+        )
 
     # 调用模型，简单的对话
     def chat(self):
@@ -223,9 +237,17 @@ class AgentTest:
                 不确定是不是这里。" 
         
         # 将用户输入的内容传递给chain，调用大模型并返回结果
-        output  = chain.invoke({"input_language": input_language, "output_language": output_language, "text": text})
+        output  = chain.invoke(
+            {
+                "input_language": input_language, 
+                "output_language": output_language, 
+                "text": text
+            }
+        )
         print(output)
 
+
+    # 构建检索问答链
     def paper_reading(self):
         # 加载向量数据库
         vector_db = Chroma(
@@ -237,7 +259,7 @@ class AgentTest:
         # 通过as_retriever方法把向量数据库构造成检索器。
         # 如下代码会在向量数据库中根据相似性进行检索，返回前 k 个最相似的文档
         retriever = vector_db.as_retriever(search_kwargs={"k": 3})
-        question = "什么是SSL？"
+        # question = "什么是SSL？"
         # docs = retriever.invoke(question)
         # for i, doc in enumerate(docs):
         #     print(f"检索到的第{i}个内容: \n {doc.page_content}", 
@@ -251,7 +273,105 @@ class AgentTest:
         # 检索链retrieval_chain是由检索器retriever及组合器combiner组成的，由|符号串连，数据从左向右传递，
         # 即问题先被retriever检索得到检索结果，再将检索结果给combiner()进一步处理并输出。
         retrieval_chain = retriever | combiner
+        # output = retrieval_chain.invoke(question)
         
+        # 基于langchain调用大模型
+        llm = SparkLLM(
+            spark_app_id=self.spark_appid,
+            spark_api_key=self.spark_api_key,
+            spark_api_secret=self.spark_api_secret,
+            spark_llm_domain=self.spark_4ultra_domain,
+            spark_api_url=self.spark_4ultra_url,
+            temperature=0.1
+        )
+        
+        template = """使用以下上下文来回答最后的问题。如果你不知道答案，就说你不知道，不要试图编造答
+        案。最多使用三句话。尽量使答案简明扼要。请你在回答的最后说“谢谢你的提问！”。
+        {context}
+        问题: {input}
+        """
+        # 将template通过 PromptTemplate 转为可以在LCEL中使用的类型
+        prompt = PromptTemplate(template=template)
+        # 把刚才定义的检索链retrieval_chain当作子链作为prompt的context，
+        # 再使用RunnablePassthrough存储用户的问题作为prompt的input。
+        # 又因为这两个操作是并行的，所以我们使用RunnableParallel来将他们并行运行
+        """
+        1、假如用户输入问题 “什么是强化学习”，RunnableParallel 会并行执行两个操作: 
+            (1) retrieval_chain通过invoke()方法执行检索链，从向量数据库中获取相关文档
+            (2) RunnablePassthrough直接传递用户的原始输入
+           之后得到: 
+                {
+                    "context": "强化学习是机器学习的一个分支...",  # 检索到的文档内容
+                    "input": "什么是强化学习？"  # 用户的原始问题
+                }
+        2、将上述结果传递给prompt，prompt会通过invoke()方法将context和input代入到template中，
+           生成给大模型的提示词模板
+        3、将生成的提示词模板prompt传递给llm，llm同样通过invoke()方法调用大模型生成最终的答案
+        4、将llm的输出结果传递给StrOutputParser，StrOutputParser会将输出解析为字符串格式
+        """
+        qa_chain = (
+            RunnableParallel({"context": retrieval_chain, "input": RunnablePassthrough()})
+            | prompt
+            | llm
+            | StrOutputParser()
+        )
+        
+        question1 = "什么是SSL？"
+        output = qa_chain.invoke(question1)
+        print(output)
+
+    # 传递聊天记录，让ai具有记忆功能
+    def historical_record(self):
+        # 系统prompt
+        # 问答链的系统prompt
+        system_prompt = (
+            "你是一个问答任务的助手。 "
+            "请使用检索到的上下文片段回答这个问题。 "
+            "如果你不知道答案就说不知道。 "
+            "请使用简洁的话语回答用户。"
+            "\n\n"
+            "{context}"
+        )
+        # 设置prompt模板
+        qa_prompt = ChatPromptTemplate(
+            [
+                ("system", system_prompt),
+                ("human", "{question}"),
+                ("placeholder", "{chat_history}")
+            ]
+        )
+        # 无历史记录情况
+        no_history_messages = qa_prompt.invoke(
+            {
+                "context": "",
+                "chat_history": [],
+                "question": "你在哪个城市？"
+            }
+        )
+        # 有历史记录情况
+        history_messages = qa_prompt.invoke(
+            {
+                "context": "",
+                "chat_history": [
+                    ("human", "你在哪个城市？"),
+                    ("ai", "我在中国的北京。")
+                ],
+                "question": "这个城市位于中国的哪个省份？"
+            }
+        )
+        for message in history_messages.messages:
+            print(message.content)
+        # TODO 让ai帮忙翻译，并根据上下文完善问题，然后再到向量数据库中查询
+        question = "FixMatch_Simplifying Semi-Supervised Learning这篇文章提出了什么方法"
+        vector_db = Chroma(
+            persist_directory = self.database_directory,
+            embedding_function = self.sparkEmbedding
+        )
+        retriever = vector_db.as_retriever(search_kwargs={"k": 1})
+        def combine_docs(docs):
+            return "\n\n".join(doc.page_content for doc in docs)
+        combiner = RunnableLambda(combine_docs)
+        retrieval_chain = retriever | combiner
         output = retrieval_chain.invoke(question)
         print(output)
 
@@ -264,4 +384,5 @@ if __name__ == "__main__":
     # agentTest.create_database()
     # agentTest.query_database()
     # agentTest.langchain_chain()
-    agentTest.paper_reading()
+    # agentTest.paper_reading()
+    agentTest.historical_record()
